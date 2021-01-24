@@ -29,7 +29,7 @@ Find your Python 2.7 system path. Mine is: `C:\Python27\`
 Set the python path in the project environment variables at:  
 VC++ Directories->Executable Directories.
 
-# Preparation:
+# Build and run:
 
 1. [Download the Illustrator SDK](https://console.adobe.io/downloads/ai)  
 `https://console.adobe.io/downloads/ai`
