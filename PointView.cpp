@@ -29,24 +29,25 @@ extern "C" {
 	AIDocumentViewSuite *sAIDocumentView = NULL; // converting art to view coordinates
 	AILayerSuite *sAILayer = NULL; // to access current layer color
 	AINotifierSuite *sAINotifier = NULL; // register move art notification
+	AIMenuSuite *sAIMenu = NULL; // adding menu selection
 }
 
 typedef struct {
 	AIAnnotatorHandle annotatorHandle;
-	//AINotifierHandle notifierHandle;
+	AIMenuItemHandle menuHandle;
 } Globals;
 
 Globals *g = nullptr;
 
-static ai::int32 POINT_VIEW_RADIUS = 6;
+static ai::int32 POINT_VIEW_RADIUS = 10;
 static AIReal POINT_VIEW_LINE_WIDTH = 2.0;
 
-static AIErr StartupPlugin(SPInterfaceMessage *message);
+static AIErr StartupPlugin(SPInterfaceMessage *message, SPPlugin *self);
 static AIErr ShutdownPlugin(SPInterfaceMessage *message);
 static AIErr DrawAnnotation(void *message);
 static void PointView_SetAIRectSize(AIRect *r, AIPoint *p, ai::int32 radius);
 
-
+bool PointViewIsActive = true;
 
 extern "C" ASAPI ASErr PluginMain(char *caller, char *selector, void *message) {
 
@@ -62,7 +63,7 @@ extern "C" ASAPI ASErr PluginMain(char *caller, char *selector, void *message) {
 
 		if (sSPBasic->IsEqual(selector, kSPInterfaceStartupSelector)) {
 			// sAIUser->MessageAlert(ai::UnicodeString("PointView Loaded"));
-			StartupPlugin((SPInterfaceMessage *)message);
+			StartupPlugin((SPInterfaceMessage *)message, self);
 		} else if (sSPBasic->IsEqual(selector, kSPInterfaceShutdownSelector)) {
 			// sAIUser->MessageAlert(ai::UnicodeString("Goodbye!"));
 			ShutdownPlugin((SPInterfaceMessage *)message);
@@ -77,17 +78,7 @@ extern "C" ASAPI ASErr PluginMain(char *caller, char *selector, void *message) {
 
 	} 
 	
-	/*
-	else if (sSPBasic->IsEqual(caller, kCallerAINotify)) {
-		if (sSPBasic->IsEqual(selector, kSelectorAINotify)) {
-			// draging art object does not trigger this notification
-			std::cout << "### selection changed ###";
-		}
-	}
-	*/
-
-	else if (sSPBasic->IsEqual(caller, kCallerAIAnnotation)) {
-
+	else if (PointViewIsActive && sSPBasic->IsEqual(caller, kCallerAIAnnotation)) {
 
 		if (sSPBasic->IsEqual(selector, kSelectorAIDrawAnnotation)) {
 			error = DrawAnnotation((AIAnnotatorMessage *)message);
@@ -115,32 +106,47 @@ extern "C" ASAPI ASErr PluginMain(char *caller, char *selector, void *message) {
 
 	}
 
+	else if (sSPBasic->IsEqual(caller, kCallerAIMenu)) {
+		if (sSPBasic->IsEqual(selector, kSelectorAIGoMenuItem)) {
+			AIMenuMessage *menuMessage = (AIMenuMessage *)message;
+			error = sSPBasic->AcquireSuite(kAIMenuSuite, kAIMenuVersion, (const void **)&sAIMenu);
+			if (PointViewIsActive) {
+				error = sAIMenu->SetItemText(menuMessage->menuItem, ai::UnicodeString("Show PointView"));
+			} else {
+				error = sAIMenu->SetItemText(menuMessage->menuItem, ai::UnicodeString("Hide PointView"));
+			}
+			error = sSPBasic->ReleaseSuite(kAIMenuSuite, kAIMenuSuiteVersion);
+			PointViewIsActive = !PointViewIsActive;
+		}
+	}
+
 	return error;
 }
 
-static AIErr StartupPlugin(SPInterfaceMessage *message) {
+
+static AIErr StartupPlugin(SPInterfaceMessage *message, SPPlugin *self) {
 	ASErr error = kNoErr;
 	SPBasicSuite* sSPBasic = message->d.basic;
 
 	error = sSPBasic->AllocateBlock(sizeof(Globals), (void **)&g);
-	if (!error) {
-		message->d.globals = g;
-	}
-
-	/*
-	// register "selection changed" notification
-	sSPBasic->AcquireSuite(kAINotifierSuite, kAINotifierVersion, (const void **)&sAINotifier);
-	error = sAINotifier->AddNotifier(message->d.self, "PointView selection changed notifier", kAIArtSelectionChangedNotifier, &(g->notifierHandle));
-	sSPBasic->ReleaseSuite(kAINotifierSuite, kAINotifierVersion);
-	*/
+	if (!error) message->d.globals = g;
 
 	// register annotator
-	sSPBasic->AcquireSuite(kAIAnnotatorSuite, kAIAnnotatorVersion, (const void **)&sAIAnnotator);
-	error = sAIAnnotator->AddAnnotator(message->d.self, "PointView Annotator", &(g->annotatorHandle));
-	sSPBasic->ReleaseSuite(kAIAnnotatorSuite, kAIAnnotatorVersion);
+	error = sSPBasic->AcquireSuite(kAIAnnotatorSuite, kAIAnnotatorVersion, (const void **)&sAIAnnotator);
+	error = sAIAnnotator->AddAnnotator(message->d.self, "PointView Annotator", &g->annotatorHandle);
+	error = sSPBasic->ReleaseSuite(kAIAnnotatorSuite, kAIAnnotatorVersion);
+
+	// add menu item
+	AIPlatformAddMenuItemDataUS menuData;
+	menuData.groupName = kViewUtilsMenuGroup;
+	menuData.itemText = ai::UnicodeString("Hide PointView");
+	error = sSPBasic->AcquireSuite(kAIMenuSuite, kAIMenuVersion, (const void **)&sAIMenu);
+	error = sAIMenu->AddMenuItem(self, "PointView", &menuData, kMenuItemNoOptions, &g->menuHandle );
+	error = sSPBasic->ReleaseSuite(kAIMenuSuite, kAIMenuSuiteVersion);
 
 	return error;
 }
+
 
 static AIErr ShutdownPlugin(SPInterfaceMessage *message) {
 	ASErr error = kNoErr;
@@ -153,6 +159,7 @@ static AIErr ShutdownPlugin(SPInterfaceMessage *message) {
 }
 
 static AIErr DrawAnnotation(void *message) {
+
 	AIErr error = kNoErr;
 
 	SPBasicSuite* sSPBasic = ((SPMessageData*)message)->basic;
@@ -172,7 +179,8 @@ static AIErr DrawAnnotation(void *message) {
 
 		AIArtHandle **selectedArtHandle;
 		ai::int32 selectedArtCount;
-		// selectedArtHandle is allocated
+
+		// selectedArtHandle is allocated - needs free
 		sAIMatchingArt->GetSelectedArt(&selectedArtHandle, &selectedArtCount);
 
 		AIArtHandle art;
@@ -229,6 +237,7 @@ static AIErr DrawAnnotation(void *message) {
 
 		// free selected art handle
 		sAIMemory->MdMemoryDisposeHandle((AIMdMemoryHandle)selectedArtHandle);
+		selectedArtHandle = nullptr;
 	}
 
 	// error = sSPBasic->AcquireSuite(kAIMatchingArtSuite, kAIMatchingArtVersion, (const void **)&sAIMatchingArt);
