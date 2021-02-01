@@ -9,9 +9,7 @@ Written in C.
 
 Based on the HelloWorld project from the `getting-started-guide.pdf` in [Adobe Illustrator SDK Docs](https://console.adobe.io/downloads/ai).  
 
-Next step: add menu item for turning functionality on/off. 
-
-# Preparation:
+# Set up:
 
 ## Visual Studio:
 Use Visual Studio 2017 (not the latest version).  
@@ -21,10 +19,10 @@ Install the Desktop Development C++ toolset (Tools/Get Tools and Features) with 
 Make sure the C++ toolset includes Windows 8.1 SDK.  
 
 ## MFC  
-Also install MFC (In Visual Studio 2017 and later, MFC and ATL are optional sub-components under the Desktop development with C++ workload in the Visual Studio Installer program. You can install ATL support without MFC, or combined MFC and ATL support (MFC depends on ATL). For more information about workloads and components, see Install Visual Studio.)  
+Also install MFC (In Visual Studio 2017 and later, MFC and ATL are optional sub-components under the Desktop development with C++ workload in the Visual Studio Installer program.)  
 
 ## Python
-If you want to build the samplecode from Adobe, it uses a Python script to generate the PiPL resource document:  
+If you want to build the samplecode from Adobe, it uses a Python script to generate the PiPL resource file:  
 For this you need to install Python 2.7 for Visual Studio.  
 Set the Python environment to 2.7.  
 Find your Python 2.7 system path. Mine is: `C:\Python27\`  
@@ -37,16 +35,13 @@ VC++ Directories->Executable Directories.
 `https://console.adobe.io/downloads/ai`
 (See details above.)  
 
-2. Place project in the `samplecode` folder
+2. Place project folder in the `samplecode` folder
 
 3. In Visual Studio make sure the Build Events > Post-Build Event > Command Line path is pointing to your Illustrator plug-ins folder.
 
 4. Build project
 
 5. Restart Illustrator
-
-# Additional setup needed for the HelloWorld project:  
-These things seems to be missing in the SDK documentation for the HelloWorld project setup for Macos Xcode.
 
 # Development notes:
 
