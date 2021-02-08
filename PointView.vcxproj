@@ -77,6 +77,7 @@
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)..\output\win\debug\</OutDir>
     <TargetExt>.aip</TargetExt>
+    <ExecutablePath>C:\Python27;$(ExecutablePath)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -85,6 +86,7 @@
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)..\output\win\debug\</OutDir>
     <TargetExt>.aip</TargetExt>
+    <ExecutablePath>C:\Python27;$(ExecutablePath)</ExecutablePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -121,6 +123,10 @@
       <Command>xcopy "$(OutDir)$(TargetName)$(TargetExt)" "C:\Users\Superpanic\AppData\Roaming\Adobe\Adobe Illustrator 25 Settings\en_US\x64\Plug-ins\" /Y
 ECHO "Done copying $(TargetName)$(TargetExt) to C:\Users\Superpanic\AppData\Roaming\Adobe\Adobe Illustrator 25 Settings\en_US\x64\Plug-ins\."</Command>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>echo performing: python ..\..\tools\pipl\create_pipl.py -input "[{\"name\":\"PointView\"}]"
+python ..\..\tools\pipl\create_pipl.py -input "[{\"name\":\"PointView\"}]"</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -165,6 +171,10 @@ ECHO "Done copying $(TargetName)$(TargetExt) to C:\Users\Superpanic\AppData\Roam
       <Command>xcopy "$(OutDir)$(TargetName)$(TargetExt)" "C:\Users\Superpanic\AppData\Roaming\Adobe\Adobe Illustrator 25 Settings\en_US\x64\Plug-ins\" /Y
 ECHO "Done copying $(TargetName)$(TargetExt) to C:\Users\Superpanic\AppData\Roaming\Adobe\Adobe Illustrator 25 Settings\en_US\x64\Plug-ins\."</Command>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>echo performing: python ..\..\tools\pipl\create_pipl.py -input "[{\"name\":\"PointView\"}]"
+python ..\..\tools\pipl\create_pipl.py -input "[{\"name\":\"PointView\"}]"</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\illustratorapi\illustrator\IAIUnicodeString.cpp" />
