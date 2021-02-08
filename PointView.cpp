@@ -30,24 +30,30 @@ extern "C" {
 	AILayerSuite *sAILayer = NULL; // to access current layer color
 	AINotifierSuite *sAINotifier = NULL; // register move art notification
 	AIMenuSuite *sAIMenu = NULL; // adding menu selection
+
+	AIPreferenceSuite *sAIPreference = NULL; // saving menu on/off state
 }
+
 
 typedef struct {
 	AIAnnotatorHandle annotatorHandle;
 	AIMenuItemHandle menuHandle;
+	AIBoolean PointViewShowing;
 } Globals;
 
 Globals *g = nullptr;
 
-static ai::int32 POINT_VIEW_RADIUS = 10;
-static AIReal POINT_VIEW_LINE_WIDTH = 2.0;
+static ai::int32 START_POINT_SIZE = 6;
+static ai::int32 END_POINT_SIZE = 8;
+static AIReal POINT_VIEW_LINE_WIDTH = 1.0;
 
-static AIErr StartupPlugin(SPInterfaceMessage *message, SPPlugin *self);
-static AIErr ShutdownPlugin(SPInterfaceMessage *message);
-static AIErr DrawAnnotation(void *message);
-static void PointView_SetAIRectSize(AIRect *r, AIPoint *p, ai::int32 radius);
+static AIErr PV_StartupPlugin(SPInterfaceMessage *message, SPPlugin *self);
+static AIErr PV_ShutdownPlugin(SPInterfaceMessage *message);
+static AIErr PV_DrawAnnotation(void *message);
+static void  PV_SetAIRectSize(AIRect *r, AIPoint *p, ai::int32 radius);
+static bool  PV_ArePointsDifferent(AIPoint *p1, AIPoint *p2);
 
-bool PointViewIsActive = true;
+//bool PointViewIsActive = true;
 
 extern "C" ASAPI ASErr PluginMain(char *caller, char *selector, void *message) {
 
@@ -63,12 +69,13 @@ extern "C" ASAPI ASErr PluginMain(char *caller, char *selector, void *message) {
 
 		if (sSPBasic->IsEqual(selector, kSPInterfaceStartupSelector)) {
 			// sAIUser->MessageAlert(ai::UnicodeString("PointView Loaded"));
-			StartupPlugin((SPInterfaceMessage *)message, self);
-		} else if (sSPBasic->IsEqual(selector, kSPInterfaceShutdownSelector)) {
-			// sAIUser->MessageAlert(ai::UnicodeString("Goodbye!"));
-			ShutdownPlugin((SPInterfaceMessage *)message);
+			PV_StartupPlugin((SPInterfaceMessage *)message, self);
 		}
-		
+		else if (sSPBasic->IsEqual(selector, kSPInterfaceShutdownSelector)) {
+			// sAIUser->MessageAlert(ai::UnicodeString("Goodbye!"));
+			PV_ShutdownPlugin((SPInterfaceMessage *)message);
+		}
+
 		// error = sSPBasic->AcquireSuite(kAIUnicodeStringSuite, kAIUnicodeStringSuiteVersion, (const void **)&sAIUnicodeString);
 		error = sSPBasic->ReleaseSuite(kAIUnicodeStringSuite, kAIUnicodeStringSuiteVersion);
 		// error = sSPBasic->AcquireSuite(kAIUserSuite, kAIUserSuiteVersion, (const void **)&sAIUser);
@@ -76,20 +83,21 @@ extern "C" ASAPI ASErr PluginMain(char *caller, char *selector, void *message) {
 		// error = sSPBasic->AcquireSuite(kSPBlocksSuite, kSPBlocksSuiteVersion, (const void**)&sSPBlocks);
 		error = sSPBasic->ReleaseSuite(kSPBlocksSuite, kSPBlocksSuiteVersion);
 
-	} 
-	
-	else if (PointViewIsActive && sSPBasic->IsEqual(caller, kCallerAIAnnotation)) {
+	}
+
+	else if (g != nullptr && g->PointViewShowing && sSPBasic->IsEqual(caller, kCallerAIAnnotation)) {
 
 		if (sSPBasic->IsEqual(selector, kSelectorAIDrawAnnotation)) {
-			error = DrawAnnotation((AIAnnotatorMessage *)message);
-			
-		} else if (sSPBasic->IsEqual(selector, kSelectorAIInvalAnnotation)) {
+			error = PV_DrawAnnotation((AIAnnotatorMessage *)message);
+
+		}
+		else if (sSPBasic->IsEqual(selector, kSelectorAIInvalAnnotation)) {
 			error = sSPBasic->AcquireSuite(kAIDocumentViewSuite, kAIDocumentViewVersion, (const void **)&sAIDocumentView);
 			error = sSPBasic->AcquireSuite(kAIAnnotatorDrawerSuite, kAIAnnotatorDrawerVersion, (const void **)&sAIAnnotatorDrawer);
-			
+
 			AIRealRect updateRect;
 			AIRect portBounds;
-			
+
 			error = sAIDocumentView->GetDocumentViewInvalidRect(NULL, &updateRect);
 			portBounds.left = _AIRealRoundToShort(updateRect.left) - 1;
 			portBounds.top = _AIRealRoundToShort(updateRect.top) + 1;
@@ -110,13 +118,14 @@ extern "C" ASAPI ASErr PluginMain(char *caller, char *selector, void *message) {
 		if (sSPBasic->IsEqual(selector, kSelectorAIGoMenuItem)) {
 			AIMenuMessage *menuMessage = (AIMenuMessage *)message;
 			error = sSPBasic->AcquireSuite(kAIMenuSuite, kAIMenuVersion, (const void **)&sAIMenu);
-			if (PointViewIsActive) {
+			if (g->PointViewShowing) {
 				error = sAIMenu->SetItemText(menuMessage->menuItem, ai::UnicodeString("Show PointView"));
-			} else {
+			}
+			else {
 				error = sAIMenu->SetItemText(menuMessage->menuItem, ai::UnicodeString("Hide PointView"));
 			}
 			error = sSPBasic->ReleaseSuite(kAIMenuSuite, kAIMenuSuiteVersion);
-			PointViewIsActive = !PointViewIsActive;
+			g->PointViewShowing = !(g->PointViewShowing);
 		}
 	}
 
@@ -124,7 +133,7 @@ extern "C" ASAPI ASErr PluginMain(char *caller, char *selector, void *message) {
 }
 
 
-static AIErr StartupPlugin(SPInterfaceMessage *message, SPPlugin *self) {
+static AIErr PV_StartupPlugin(SPInterfaceMessage *message, SPPlugin *self) {
 	ASErr error = kNoErr;
 	SPBasicSuite* sSPBasic = message->d.basic;
 
@@ -133,23 +142,40 @@ static AIErr StartupPlugin(SPInterfaceMessage *message, SPPlugin *self) {
 
 	// register annotator
 	error = sSPBasic->AcquireSuite(kAIAnnotatorSuite, kAIAnnotatorVersion, (const void **)&sAIAnnotator);
-	error = sAIAnnotator->AddAnnotator(message->d.self, "PointView Annotator", &g->annotatorHandle);
+	error = sAIAnnotator->AddAnnotator(message->d.self, "PointView Annotator", &(g->annotatorHandle));
 	error = sSPBasic->ReleaseSuite(kAIAnnotatorSuite, kAIAnnotatorVersion);
+
+	// read menu on/off preference
+
+	g->PointViewShowing = true; // set default value, used if preference not set.
+	error = sSPBasic->AcquireSuite(kAIPreferenceSuite, kAIPreferenceVersion, (const void **)&sAIPreference);
+	//AIAPI AIErr(* AIPreferenceSuite::PutBooleanPreference)(const char *prefix, const char *suffix, AIBoolean value)
+	error = sAIPreference->GetBooleanPreference("PointView", "Show", &(g->PointViewShowing));
+	error = sSPBasic->ReleaseSuite(kAIPreferenceSuite, kAIPreferenceVersion);
+
 
 	// add menu item
 	AIPlatformAddMenuItemDataUS menuData;
 	menuData.groupName = kViewUtilsMenuGroup;
-	menuData.itemText = ai::UnicodeString("Hide PointView");
+	if (g->PointViewShowing) menuData.itemText = ai::UnicodeString("Hide PointView");
+	else menuData.itemText = ai::UnicodeString("Show PointView");
 	error = sSPBasic->AcquireSuite(kAIMenuSuite, kAIMenuVersion, (const void **)&sAIMenu);
-	error = sAIMenu->AddMenuItem(self, "PointView", &menuData, kMenuItemNoOptions, &g->menuHandle );
+	error = sAIMenu->AddMenuItem(self, "PointView", &menuData, kMenuItemNoOptions, &(g->menuHandle));
 	error = sSPBasic->ReleaseSuite(kAIMenuSuite, kAIMenuSuiteVersion);
 
 	return error;
 }
 
 
-static AIErr ShutdownPlugin(SPInterfaceMessage *message) {
+static AIErr PV_ShutdownPlugin(SPInterfaceMessage *message) {
 	ASErr error = kNoErr;
+	SPBasicSuite* sSPBasic = message->d.basic;
+
+	error = sSPBasic->AcquireSuite(kAIPreferenceSuite, kAIPreferenceVersion, (const void **)&sAIPreference);
+	//AIAPI AIErr(* AIPreferenceSuite::PutBooleanPreference)(const char *prefix, const char *suffix, AIBoolean value)
+	error = sAIPreference->PutBooleanPreference("PointView", "Show", g->PointViewShowing);
+	error = sSPBasic->ReleaseSuite(kAIPreferenceSuite, kAIPreferenceVersion);
+
 	if (g != nullptr) {
 		message->d.basic->FreeBlock(g);
 		g = nullptr;
@@ -158,7 +184,33 @@ static AIErr ShutdownPlugin(SPInterfaceMessage *message) {
 	return error;
 }
 
-static AIErr DrawAnnotation(void *message) {
+static void PV_DrawCrissShape(AIAnnotatorDrawer *annotatorDrawer, const AIPoint &startPointView, AIPoint &p1, AIPoint &p2) {
+	p1.h = startPointView.h - START_POINT_SIZE;
+	p1.v = startPointView.v - START_POINT_SIZE;
+	p2.h = startPointView.h + START_POINT_SIZE;
+	p2.v = startPointView.v + START_POINT_SIZE;
+	sAIAnnotatorDrawer->DrawLine(annotatorDrawer, p1, p2);
+	p1.h = startPointView.h + START_POINT_SIZE;
+	p1.v = startPointView.v - START_POINT_SIZE;
+	p2.h = startPointView.h - START_POINT_SIZE;
+	p2.v = startPointView.v + START_POINT_SIZE;
+	sAIAnnotatorDrawer->DrawLine(annotatorDrawer, p1, p2);
+}
+
+static void PV_DrawCrossShape(AIAnnotatorDrawer *annotatorDrawer, const AIPoint &endPointView, AIPoint &p1, AIPoint &p2) {
+	p1.h = endPointView.h - END_POINT_SIZE;
+	p1.v = endPointView.v;
+	p2.h = endPointView.h + END_POINT_SIZE;
+	p2.v = endPointView.v;
+	sAIAnnotatorDrawer->DrawLine(annotatorDrawer, p1, p2);
+	p1.h = endPointView.h;
+	p1.v = endPointView.v - END_POINT_SIZE;
+	p2.h = endPointView.h;
+	p2.v = endPointView.v + END_POINT_SIZE;
+	sAIAnnotatorDrawer->DrawLine(annotatorDrawer, p1, p2);
+}
+
+static AIErr PV_DrawAnnotation(void *message) {
 
 	AIErr error = kNoErr;
 
@@ -210,11 +262,6 @@ static AIErr DrawAnnotation(void *message) {
 						error = sAIDocumentView->ArtworkPointToViewPoint(NULL, &(firstSegment.p), &startPointView);
 						error = sAIDocumentView->ArtworkPointToViewPoint(NULL, &(lastSegment.p), &endPointView);
 
-						AIRect startRect;
-						AIRect endRect;
-
-						PointView_SetAIRectSize(&startRect, &startPointView, POINT_VIEW_RADIUS);
-						PointView_SetAIRectSize(&endRect, &endPointView, POINT_VIEW_RADIUS);
 
 						AILayerHandle layer;
 						sAIArt->GetLayerOfArt(art, &layer);
@@ -225,8 +272,14 @@ static AIErr DrawAnnotation(void *message) {
 						sAIAnnotatorDrawer->SetColor(annotatorDrawer, col);
 						sAIAnnotatorDrawer->SetLineWidth(annotatorDrawer, POINT_VIEW_LINE_WIDTH);
 
-						sAIAnnotatorDrawer->DrawEllipse(annotatorDrawer, startRect, false);
-						sAIAnnotatorDrawer->DrawEllipse(annotatorDrawer, endRect, false);
+						AIPoint p1;
+						AIPoint p2;
+
+						PV_DrawCrissShape(annotatorDrawer, startPointView, p1, p2);
+
+						if (PV_ArePointsDifferent(&startPointView, &endPointView)) {
+							PV_DrawCrossShape(annotatorDrawer, endPointView, p1, p2);
+						}
 
 					}
 				}
@@ -258,7 +311,11 @@ static AIErr DrawAnnotation(void *message) {
 	return error;
 }
 
-static void PointView_SetAIRectSize(AIRect *r, AIPoint *p, ai::int32 radius) {
+static bool  PV_ArePointsDifferent(AIPoint *p1, AIPoint *p2) {
+	return (p1->h != p2->h || p1->v != p2->v);
+}
+
+static void PV_SetAIRectSize(AIRect *r, AIPoint *p, ai::int32 radius) {
 	r->left = p->h - radius;
 	r->right = p->h + radius;
 	r->top = p->v - radius;
